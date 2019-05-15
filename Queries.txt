@@ -1,0 +1,156 @@
+/*Question 1: Write a Query to find out the total rental orders for each individual film category. */
+
+WITH t1 AS (
+   SELECT
+      inv.film_id
+   FROM
+      inventory inv
+      JOIN rental r ON inv.inventory_id = r.inventory_id),
+t2 AS (
+   SELECT
+      f.film_id,
+      f.title film_title,
+      c.name category_name
+   FROM
+      film f
+      JOIN film_category fc ON f.film_id = fc.film_id
+      JOIN category c ON fc.category_id = c.category_id
+)
+SELECT
+   t2.category_name,
+   count(*) rental_count
+FROM
+   t1
+   JOIN t2 ON t1.film_id = t2.film_id
+GROUP BY
+   1
+ORDER BY
+   1;
+
+
+/*Question 2: How the two stores compare in their count of rental orders during every month for all the years?*/
+
+SELECT
+   date_part('month', rental_date) rental_month,
+   date_part('year', rental_date) rental_year,
+   s.store_id,
+   count(*) count_rentals
+FROM
+   rental r
+   JOIN staff s ON r.staff_id = s.staff_id
+GROUP BY
+   1,
+   2,
+   s.store_id
+ORDER BY
+   4 DESC
+
+
+/*Question 3: who were our top 5 paying customers, how many payments they made on a monthly basis during 2007,and what was the amount of the monthly payments? */
+
+WITH t1 AS (
+   SELECT
+      customer_id,
+      amount,
+      date_trunc('month', payment_date) pay_mon
+   FROM
+      payment
+   WHERE
+      payment_date BETWEEN '2007-01-01'
+      AND '2008-01-01'), t2 AS (
+   SELECT
+      c.customer_id, (c.first_name || ' ' || c.last_name) cust_full_name, sum(p.amount) tot_pmt_amt
+   FROM
+      payment p
+      JOIN customer c ON p.customer_id = c.customer_id
+   GROUP BY
+      c.customer_id
+   ORDER BY
+      tot_pmt_amt DESC
+   LIMIT 5
+)
+SELECT
+   t1.pay_mon,
+   t2.cust_full_name,
+   count(*) pay_countpermon,
+sum(t1.amount) pay_amount
+FROM
+   t1
+   JOIN t2 ON t1.customer_id = t2.customer_id
+GROUP BY
+   t1.pay_mon,
+   t2.cust_full_name
+ORDER BY
+   2,
+   1;
+
+
+/*Question 4: Find out the difference across each of the top 5 paying customers monthly payments during 2007?*/
+
+WITH t3 AS (
+WITH t1 AS (
+      SELECT
+         customer_id,
+         amount,
+         date_trunc('month', payment_date) pay_mon
+      FROM
+         payment
+      WHERE
+         payment_date BETWEEN '2007-01-01'
+         AND '2008-01-01'), t2 AS (
+         SELECT
+            c.customer_id, (c.first_name || ' ' || c.last_name) cust_full_name, sum(p.amount) tot_pmt_amt
+         FROM
+            payment p
+            JOIN customer c ON p.customer_id = c.customer_id
+         GROUP BY
+            c.customer_id
+         ORDER BY
+            tot_pmt_amt DESC
+         LIMIT 5
+)
+   SELECT
+      t1.pay_mon,
+      t2.cust_full_name,
+      count(*) pay_countpermon,
+      sum(t1.amount) pay_amount,
+      dense_rank()
+      OVER (PARTITION BY
+            t2.cust_full_name
+         ORDER BY
+            t2.cust_full_name,
+            t1.pay_mon) AS rank
+      FROM
+         t1
+         JOIN t2 ON t1.customer_id = t2.customer_id
+      GROUP BY
+         t1.pay_mon,
+         t2.cust_full_name
+      ORDER BY
+         2,
+         1
+)
+SELECT
+   t3.pay_mon,
+   t3.cust_full_name,
+   t3.pay_amount,
+   CASE WHEN t3.rank = 1 THEN
+      0
+   ELSE
+      (t3.pay_amount - (lag(t3.pay_amount)
+            OVER (
+            ORDER BY
+               t3.cust_full_name,
+               t3.pay_mon)))
+END AS diff_across_each_monthly_pmt
+FROM
+   t3
+GROUP BY
+   t3.cust_full_name,
+   t3.pay_mon,
+   t3.pay_amount,
+   t3.rank
+ORDER BY
+   t3.cust_full_name,
+   t3.pay_mon;
+
